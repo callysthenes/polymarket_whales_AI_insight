@@ -133,94 +133,104 @@ def process_scheduler(state):
     global insight_candidates
     
     ai_usage = state["ai_usage"]
-    count = ai_usage["count"]
-    last_sent = ai_usage["last_sent_ts"]
-    cat_usage = ai_usage.get("categories", {})
-    now = time.time()
     
-    # Check Constraints
-    if count >= MAX_AI_CALLS_PER_DAY:
-        return # Budget exhausted
+    # Burst Loop: Keep sending until budget hit or no candidates
+    while True:
+        count = ai_usage["count"]
+        last_sent = ai_usage["last_sent_ts"]
+        now = time.time()
         
-    if now - last_sent < MIN_SECONDS_BETWEEN_AI_ALERTS:
-        return # Too soon
-        
-    if not insight_candidates:
-        return
-        
-    # --- SCORING WITH DIVERSITY ---
-    # We want to pick a candidate whose category has LOW usage.
-    # New Score = Raw Score / (1 + CategoryUsageCount*10)
-    
-    scored_candidates = []
-    for cand in insight_candidates:
-        cat = cand.get('event_category', 'other')
-        usage = cat_usage.get(cat, 0)
-        
-        # Diversity Penalty: Drastically reduce score if we already covered this topic today
-        adjusted_score = cand['score'] / (1 + (usage * 50)) 
-        
-        scored_candidates.append((adjusted_score, cand))
-    
-    # Sort by Adjusted Score
-    scored_candidates.sort(key=lambda x: x[0], reverse=True)
-    
-    # Pick Best
-    best_score, best = scored_candidates[0]
-    
-    # Removing from queue happens via timestamp cleanup mainly, 
-    # but we should remove this specific one to avoid sending it again?
-    # Actually, state['insights'] handles dedup per event.
-    
-    last_event_ts = state["insights"].get(best['event_slug'], 0)
-    if now - last_event_ts < 21600: 
-        # Skip this one, try next best?
-        # For simplicity, if best is blocked, we wait next loop. 
-        # (Or we could iterate list, but lets keep it simple).
-        return
+        # Check Budget
+        if count >= MAX_AI_CALLS_PER_DAY:
+            logger.info("Daily AI Budget Reached.")
+            return
 
-    # --- EXECUTE AI ANALYSIS ---
-    logger.info(f"SCHEDULER: Triggering AI Analysis for {best['event_title']} (Cat: {best['event_category']}, Score: {best_score:.0f})")
-    
-    try:
-        market_question = best['market_question']
-        analysis = best['analysis']
+        # Check Interval (Skipped if we haven't sent anything recently, OR if we are in Burst Mode)
+        # If we just sent one (last_sent is roughly now), we normally wait.
+        # But if MIN_SECONDS is small (<60), we assume Burst Mode and ignore wait relative to LAST send in this loop.
+        # However, we must ensure we don't violate rate limits if we loop fast.
+        if MIN_SECONDS_BETWEEN_AI_ALERTS >= 60:
+             if now - last_sent < MIN_SECONDS_BETWEEN_AI_ALERTS:
+                 return # Too soon for normal scheduler
+
+        if not insight_candidates:
+            return
+
+        # --- SCORING ---
+        cat_usage = ai_usage.get("categories", {})
+        scored_candidates = []
+        for cand in insight_candidates:
+            cat = cand.get('event_category', 'other')
+            usage = cat_usage.get(cat, 0)
+            adjusted_score = cand['score'] / (1 + (usage * 50)) 
+            scored_candidates.append((adjusted_score, cand))
         
-        ai_report = ai_analyst.analyze_opportunity(
-            market_question=market_question,
-            outcomes=["Outcome"], 
-            current_prices=[str(analysis['end_price'])]
-        )
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
         
-        reasons_str = ", ".join(analysis['reasons'])
-        ai_section = f"\n\n🤖 <b>AI Advisory:</b>\n{ai_report}" if ai_report else ""
+        # Pick Best
+        best = None
+        best_score = 0
         
-        msg = (
-            f"⚡ <b>Daily Market Insight</b> ⚡\n"
-            f"<i>(Topic: {best['event_category'].upper()} | Budget: {count + 1}/{MAX_AI_CALLS_PER_DAY})</i>\n\n"
-            f"<b>Event:</b> {best['event_title']}\n"
-            f"<b>Market:</b> {market_question}\n"
-            f"<b>Activity:</b> {reasons_str}\n"
-            f"<b>Vol:</b> ${analysis['total_volume']:,.0f}\n"
-            f"<b>Price:</b> {analysis['end_price']}\n"
-            f"<b>Link:</b> <a href='https://polymarket.com/event/{best['event_slug']}'>View Market</a>"
-            f"{ai_section}"
-        )
-        
-        if notifier.send_message(msg):
-            # Update State
-            state["ai_usage"]["count"] += 1
-            state["ai_usage"]["last_sent_ts"] = now
-            state["insights"][best['event_slug']] = now
+        for score, cand in scored_candidates:
+            last_event_ts = state["insights"].get(cand['event_slug'], 0)
+            if now - last_event_ts < 21600: 
+                continue
+            best = cand
+            best_score = score
+            break
             
-            # Increment Category Usage
-            cat = best.get('event_category', 'other')
-            state["ai_usage"]["categories"][cat] = cat_usage.get(cat, 0) + 1
+        if not best:
+            return # No valid candidates
+
+        # Remove chosen from candidates immediately so we don't pick it again in next iteration of while loop
+        if best in insight_candidates:
+            insight_candidates.remove(best)
+
+        # --- EXECUTE AI ANALYSIS ---
+        logger.info(f"SCHEDULER: Triggering AI Analysis for {best['event_title']} (Cat: {best['event_category']}, Score: {best_score:.0f})")
+        
+        try:
+            market_question = best['market_question']
+            analysis = best['analysis']
             
-            logger.info("Insight sent successfully.")
+            ai_report = ai_analyst.analyze_opportunity(
+                market_question=market_question,
+                outcomes=["Outcome"], 
+                current_prices=[str(analysis['end_price'])]
+            )
             
-    except Exception as e:
-        logger.error(f"Scheduler failed to send insight: {e}")
+            reasons_str = ", ".join(analysis['reasons'])
+            ai_section = f"\n\n🤖 <b>AI Advisory:</b>\n{ai_report}" if ai_report else ""
+            
+            msg = (
+                f"⚡ <b>Daily Market Insight</b> ⚡\n"
+                f"<i>(Topic: {best['event_category'].upper()} | Budget: {count + 1}/{MAX_AI_CALLS_PER_DAY})</i>\n\n"
+                f"<b>Event:</b> {best['event_title']}\n"
+                f"<b>Market:</b> {market_question}\n"
+                f"<b>Activity:</b> {reasons_str}\n"
+                f"<b>Vol:</b> ${analysis['total_volume']:,.0f}\n"
+                f"<b>Price:</b> {analysis['end_price']}\n"
+                f"<b>Link:</b> <a href='https://polymarket.com/event/{best['event_slug']}'>View Market</a>"
+                f"{ai_section}"
+            )
+            
+            if notifier.send_message(msg):
+                state["ai_usage"]["count"] += 1
+                state["ai_usage"]["last_sent_ts"] = time.time()
+                state["insights"][best['event_slug']] = time.time()
+                
+                cat = best.get('event_category', 'other')
+                state["ai_usage"]["categories"][cat] = cat_usage.get(cat, 0) + 1
+                
+                logger.info("Insight sent successfully.")
+                
+            # Sleep slightly to avoid Telegram 429
+            time.sleep(3)
+                
+        except Exception as e:
+            logger.error(f"Scheduler failed to send insight: {e}")
+            break # Break loop on error logic
+
 
     # Cleanup old candidates
     insight_candidates = [c for c in insight_candidates if now - c['timestamp'] < 3600]
