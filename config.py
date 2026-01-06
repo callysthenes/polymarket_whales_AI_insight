@@ -31,5 +31,5 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # Optimization Constraints
-MAX_AI_CALLS_PER_DAY = 13 # 1000/month ~= 33/day, conservative 13/day
-MIN_SECONDS_BETWEEN_AI_ALERTS = 6000 # ~100 minutes (distribute 13 across 24h)
+MAX_AI_CALLS_PER_DAY = 13 # 1000/month ~= 33/day
+MIN_SECONDS_BETWEEN_AI_ALERTS = 30 # Burst Mode: Send insights rapidly until limit hit

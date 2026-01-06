@@ -17,6 +17,9 @@ def reset_trades():
         
         # Don't clear 'insights' or 'ai_usage' to keep budget intact
         print(f"Keeping AI Usage (Count: {data.get('ai_usage', {}).get('count', 0)})")
+        # Optional: Uncomment to reset AI budget if you want to force a full fresh burst
+        data["ai_usage"]["count"] = 0
+        print("   -> AI Budget RESET for testing/burst.")
         
         with open(STATE_FILE, "w") as f:
             json.dump(data, f)

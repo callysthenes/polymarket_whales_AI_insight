@@ -9,10 +9,11 @@ A sophisticated Python bot that monitors [Polymarket](https://polymarket.com) fo
     *   Uses **DeepSeek** LLM to analyze market probability vs. real-world news.
     *   Uses **Tavily** for real-time web search to ground analysis in current events.
     *   Provides "Buy/Sell" recommendations and ROI calculations.
-*   **📉 Smart Scheduling**:
-    *   Optimized for API rate limits (e.g., Tavily Free Tier).
-    *   Distributes AI insights evenly across the day (default: 13/day).
-    *   Prioritizes diverse topics (Politics, Crypto, Tech) to avoid repetition.
+*   **📉 Smart Scheduling (Burst Mode)**:
+    *   **Rapid Reports**: Analyzes the top 13 opportunities immediately upon starting (or daily reset).
+    *   **Quota Management**: Stops AI analysis once the daily limit (13) is reached to save credits.
+    *   **24/7 Whales**: Whale alerts are independent and run 24/7.
+    *   **Diversity**: Prioritizes different topics (Politics, Crypto, Tech) to avoid repetition.
 *   **💾 Robust Persistence**:
     *   Saves state to `bot_state.json`.
     *   Never misses a whale: Remembers past alerts even after restart.
