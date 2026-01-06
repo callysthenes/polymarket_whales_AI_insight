@@ -47,6 +47,30 @@ def get_top_traders(category="politics"):
         logger.error(f"Error scraping leaderboard for {category}: {e}")
         return []
 
+def is_sports_event(slug, title):
+    """Returns True if the event looks like a sport."""
+    # 1. Check Slug Prefixes/Keywords
+    sports_prefixes = [
+        "nfl-", "nba-", "epl-", "mlb-", "nhl-", "cfb-", "ufc-", "mma-",
+        "uefa-", "fifa-", "bundesliga-", "serie-a-", "lal-", 
+        "tennis-", "f1-", "boxing-", "cricket-", "rugby-", "golf-",
+        "soccer-", "football-", "champions-league-", "premier-league-",
+        "will-real-madrid", "will-manchester", "will-arsenal", 
+        "will-liverpool", "will-barcelona"
+    ]
+    slug_lower = slug.lower()
+    for p in sports_prefixes:
+        if slug_lower.startswith(p) or p in slug_lower:
+            return True
+            
+    # 2. Check Title for Sports Betting Terms
+    title_lower = title.lower()
+    # "O/U", "Spread:", "Handicap", " vs " (with care)
+    if "o/u" in title_lower or "spread:" in title_lower or "total:" in title_lower:
+        return True
+        
+    return False
+
 def get_active_positions(user_address):
     """
     Fetches active positions for a user.
@@ -66,10 +90,13 @@ def get_active_positions(user_address):
                 if size < 10: # Filter dust
                     continue
                     
-                # We want "active" positions that verify the "clean track"
-                # But mostly we just want to see what they are holding NOW.
-                
                 market_slug = pos.get('slug', '')
+                market_title = pos.get('title', '')
+                
+                # FILTER: Ignore Sports
+                if is_sports_event(market_slug, market_title):
+                    continue
+                
                 outcome = pos.get('outcome', '')
                 
                 active.append({

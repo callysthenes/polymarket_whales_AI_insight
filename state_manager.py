@@ -30,9 +30,13 @@ def load_state():
             if "categories" not in data["ai_usage"]:
                 data["ai_usage"]["categories"] = {}
                 
+                
             # Migration for Smart Money logic
             if "smart_positions" not in data:
                 data["smart_positions"] = []
+                
+            # Force re-scan on restart for testing validity
+            data["last_smart_scan_ts"] = 0 
                 
             return data
     except Exception as e:
