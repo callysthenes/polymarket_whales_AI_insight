@@ -23,8 +23,8 @@ def monitor_markets(state):
         
         # 1. Fetch expiring events
         categories = [
-            "politics", "geopolitics", "finance", "crypto", 
-            "elections", "tech", "culture", "world", "breaking"
+            "politics", "geopolitics", "economics", "world",
+            "elections", "macroeconomics" 
         ]
         events = polymarket_api.fetch_expiring_events(hours_ahead=24, categories=categories)
         logger.info(f"Found {len(events)} relevant expiring events.")
@@ -143,10 +143,11 @@ def monitor_markets(state):
                     val = op['position']['value']
                     outcome = op['position']['outcome']
                     mkt = op['position']['market']
+                    cat = op.get('category', 'general').capitalize()
                     
                     smart_msg = (
                         f"🧠 <b>SMART MONEY ALERT</b> 🧠\n"
-                        f"<b>Leaderboard Trader:</b> {trader_short}...\n"
+                        f"<b>Top 5 {cat} Trader:</b> {trader_short}...\n"
                         f"<b>Holding:</b> ${val:,.0f} on <b>{outcome}</b>\n"
                         f"<b>Market:</b> {mkt}\n"
                         f"<i>Replicate this position?</i>\n"
