@@ -118,6 +118,51 @@ def monitor_markets(state):
         # Update State (Trades)
         state["trades"] = list(notified_trade_ids)
         
+        # --- SMART MONEY SCAN (Every 10 mins approx) ---
+        last_smart_scan = state.get("last_smart_scan_ts", 0)
+        if time.time() - last_smart_scan > 600: # 10 minutes
+            logger.info("Running Smart Money Scan...")
+            try:
+                import smart_follower
+                opportunities = smart_follower.analyze_smart_money()
+                notified_positions = set(state.get("smart_positions", []))
+                
+                for op in opportunities:
+                    # Create unique ID for this position state
+                    # address + slug + outcome + approx_size_tier
+                    # We want to re-alert if they drastically increase size? 
+                    # For now, unique id = trader + slug + outcome.
+                    # Actually, if they hold it, we alert once.
+                    pos_id = f"{op['trader']}-{op['position']['slug']}-{op['position']['outcome']}"
+                    
+                    if pos_id in notified_positions:
+                        continue
+                        
+                    # Format Message
+                    trader_short = op['trader'][:6]
+                    val = op['position']['value']
+                    outcome = op['position']['outcome']
+                    mkt = op['position']['market']
+                    
+                    smart_msg = (
+                        f"🧠 <b>SMART MONEY ALERT</b> 🧠\n"
+                        f"<b>Leaderboard Trader:</b> {trader_short}...\n"
+                        f"<b>Holding:</b> ${val:,.0f} on <b>{outcome}</b>\n"
+                        f"<b>Market:</b> {mkt}\n"
+                        f"<i>Replicate this position?</i>\n"
+                        f"<b>Link:</b> <a href='https://polymarket.com/event/{op['position']['slug']}'>View Market</a>"
+                    )
+                    
+                    if notifier.send_message(smart_msg):
+                        notified_positions.add(pos_id)
+                        logger.info(f"Smart Money Alert sent: {trader_short} on {mkt}")
+                        
+                state["smart_positions"] = list(notified_positions)
+                state["last_smart_scan_ts"] = time.time()
+                
+            except Exception as e:
+                logger.error(f"Smart Money Scan failed: {e}")
+        
         # --- SCHEDULER: PROCESS INSIGHTS ---
         process_scheduler(state)
         

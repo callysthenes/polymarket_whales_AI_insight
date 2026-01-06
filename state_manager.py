@@ -25,14 +25,26 @@ def load_state():
                     "last_sent_ts": 0,
                     "categories": {}
                 }
+            
             # Migration for existing ai_usage without categories
             if "categories" not in data["ai_usage"]:
                 data["ai_usage"]["categories"] = {}
                 
+            # Migration for Smart Money logic
+            if "smart_positions" not in data:
+                data["smart_positions"] = []
+                
             return data
     except Exception as e:
         logger.error(f"Failed to load state: {e}")
-        return {"trades": [], "insights": {}, "ai_usage": {"count": 0, "date": time.strftime("%Y-%m-%d"), "last_sent_ts": 0, "categories": {}}}
+        return {
+            "trades": [], 
+            "insights": {}, 
+            "smart_positions": [], 
+            "ai_usage": {
+                "count": 0, "date": time.strftime("%Y-%m-%d"), "last_sent_ts": 0, "categories": {}
+            }
+        }
 
 def save_state(state):
     """Saves state to disk."""
@@ -55,6 +67,10 @@ def cleanup_state(state):
     if len(state["trades"]) > 5000:
         state["trades"] = state["trades"][-5000:]
         
+    # Remove old smart money alerts (keep last 1000)
+    if len(state.get("smart_positions", [])) > 1000:
+        state["smart_positions"] = state["smart_positions"][-1000:]
+
     # Remove old insights (older than 24h)
     now = time.time()
     new_insights = {}
